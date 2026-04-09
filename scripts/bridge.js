@@ -31,7 +31,10 @@ registerCommand("show-portrait", async ({ actorName }) => {
     return;
   }
 
-  const ip = new ImagePopout(img, { title: actor.name, shareable: true });
+  const ip = new ImagePopout({
+    src: img,
+    window: { title: actor.name },
+  });
   ip.render(true);
   ip.shareImage();
 });
@@ -71,7 +74,10 @@ registerCommand("activate-scene", async ({ sceneName }) => {
 });
 
 registerCommand("send-chat", async ({ message }) => {
-  await ChatMessage.create({ content: message, type: CONST.CHAT_MESSAGE_TYPES?.IC ?? 2 });
+  await ChatMessage.create({
+    content: message,
+    style: CONST.CHAT_MESSAGE_STYLES.IC,
+  });
 });
 
 // ── WebSocket Connection ────────────────────────────────────────────────────
