@@ -2,7 +2,7 @@
   "id": "ktp-foundry-bridge",
   "title": "KTP Overlay Bridge",
   "description": "Connects Foundry VTT to the KTP overlay server via WebSocket for bidirectional control.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "compatibility": {
     "minimum": "12",
     "verified": "13"

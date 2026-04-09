@@ -80,6 +80,14 @@ registerCommand("send-chat", async ({ message }) => {
   });
 });
 
+registerCommand("eval", async ({ code }) => {
+  const fn = new Function("game", "canvas", "ui", "ChatMessage", "Roll", code);
+  const result = await fn(game, canvas, ui, ChatMessage, Roll);
+  if (result !== undefined) {
+    sendEvent("eval-result", { result: String(result) });
+  }
+});
+
 // ── WebSocket Connection ────────────────────────────────────────────────────
 
 let ws = null;
