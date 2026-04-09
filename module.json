@@ -1,0 +1,16 @@
+{
+  "id": "ktp-foundry-bridge",
+  "title": "KTP Overlay Bridge",
+  "description": "Connects Foundry VTT to the KTP overlay server via WebSocket for bidirectional control.",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "11",
+    "verified": "12"
+  },
+  "authors": [
+    { "name": "Aerion" }
+  ],
+  "esmodules": ["scripts/bridge.js"],
+  "manifest": "https://github.com/aeriondyseti/ktp-foundry-bridge/releases/latest/download/module.json",
+  "download": "https://github.com/aeriondyseti/ktp-foundry-bridge/releases/latest/download/ktp-foundry-bridge.zip"
+}
