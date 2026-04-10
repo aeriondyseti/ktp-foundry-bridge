@@ -9,34 +9,38 @@ function registerCommand(name, handler) {
 // ── Built-in Commands ───────────────────────────────────────────────────────
 
 registerCommand("show-portrait", async ({ actorName }) => {
-  const actor = game.actors.find(
-    (a) => a.name.toLowerCase() === actorName.toLowerCase()
-  );
-  if (!actor) {
-    console.warn(`[KTP Bridge] Actor not found: ${actorName}`);
-    sendEvent("command-error", {
-      command: "show-portrait",
-      error: `Actor "${actorName}" not found`,
-    });
-    return;
+  const name = actorName.toLowerCase();
+
+  // Check journal pages first (NPCs journal, then all journals)
+  for (const journal of game.journal) {
+    const page = journal.pages.find(
+      (p) => p.name.toLowerCase() === name && p.type === "image" && p.src
+    );
+    if (page) {
+      const ip = new ImagePopout({ src: page.src, window: { title: page.name } });
+      ip.render(true);
+      ip.shareImage();
+      return;
+    }
   }
 
-  const img = actor.img || actor.prototypeToken?.texture?.src;
-  if (!img) {
-    console.warn(`[KTP Bridge] No portrait for: ${actorName}`);
-    sendEvent("command-error", {
-      command: "show-portrait",
-      error: `No portrait for "${actorName}"`,
-    });
-    return;
+  // Fall back to actor portrait
+  const actor = game.actors.find((a) => a.name.toLowerCase() === name);
+  if (actor) {
+    const img = actor.img || actor.prototypeToken?.texture?.src;
+    if (img) {
+      const ip = new ImagePopout({ src: img, window: { title: actor.name } });
+      ip.render(true);
+      ip.shareImage();
+      return;
+    }
   }
 
-  const ip = new ImagePopout({
-    src: img,
-    window: { title: actor.name },
+  console.warn(`[KTP Bridge] No portrait found for: ${actorName}`);
+  sendEvent("command-error", {
+    command: "show-portrait",
+    error: `No portrait found for "${actorName}"`,
   });
-  ip.render(true);
-  ip.shareImage();
 });
 
 registerCommand("execute-macro", async ({ macroName }) => {
