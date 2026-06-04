@@ -8,6 +8,11 @@ function registerCommand(name, handler) {
 
 // ── Built-in Commands ───────────────────────────────────────────────────────
 
+// Handlers throw on failure (handleCommand turns that into a
+// `command-error` reply) and may return an object whose fields are folded
+// into the `command-ok` reply — that's how a caller gets a roll total or
+// eval result back over the HTTP command path.
+
 registerCommand("show-portrait", async ({ actorName }) => {
   const name = actorName.toLowerCase();
 
@@ -36,44 +41,28 @@ registerCommand("show-portrait", async ({ actorName }) => {
     }
   }
 
-  console.warn(`[KTP Bridge] No portrait found for: ${actorName}`);
-  sendEvent("command-error", {
-    command: "show-portrait",
-    error: `No portrait found for "${actorName}"`,
-  });
+  throw new Error(`No portrait found for "${actorName}"`);
 });
 
 registerCommand("execute-macro", async ({ macroName }) => {
   const macro = game.macros.find(
     (m) => m.name.toLowerCase() === macroName.toLowerCase()
   );
-  if (!macro) {
-    sendEvent("command-error", {
-      command: "execute-macro",
-      error: `Macro "${macroName}" not found`,
-    });
-    return;
-  }
+  if (!macro) throw new Error(`Macro "${macroName}" not found`);
   await macro.execute();
 });
 
 registerCommand("roll", async ({ formula }) => {
   const roll = await new Roll(formula).evaluate();
   await roll.toMessage({ flavor: `Bridge Roll: ${formula}` });
-  sendEvent("roll-result", { formula, total: roll.total });
+  return { formula, total: roll.total };
 });
 
 registerCommand("activate-scene", async ({ sceneName }) => {
   const scene = game.scenes.find(
     (s) => s.name.toLowerCase() === sceneName.toLowerCase()
   );
-  if (!scene) {
-    sendEvent("command-error", {
-      command: "activate-scene",
-      error: `Scene "${sceneName}" not found`,
-    });
-    return;
-  }
+  if (!scene) throw new Error(`Scene "${sceneName}" not found`);
   await scene.activate();
 });
 
@@ -87,9 +76,7 @@ registerCommand("send-chat", async ({ message }) => {
 registerCommand("eval", async ({ code }) => {
   const fn = new Function("game", "canvas", "ui", "ChatMessage", "Roll", code);
   const result = await fn(game, canvas, ui, ChatMessage, Roll);
-  if (result !== undefined) {
-    sendEvent("eval-result", { result: String(result) });
-  }
+  if (result !== undefined) return { result: String(result) };
 });
 
 // ── WebSocket Connection ────────────────────────────────────────────────────
@@ -118,15 +105,15 @@ function connect() {
   }
 
   ws.addEventListener("open", () => {
-    console.log("[KTP Bridge] Connected to overlay server");
+    console.log("[KTP Bridge] Connected to ktp-hub");
     reconnectDelay = 1000;
-    ws.send(JSON.stringify({ type: "identify", client: "foundry" }));
+    ws.send(JSON.stringify({ type: "identify", peer: "foundry" }));
   });
 
   ws.addEventListener("message", (event) => {
     try {
       const msg = JSON.parse(event.data);
-      if (msg.type === "foundry-command") {
+      if (msg.type === "peer-command" && msg.target === "foundry") {
         handleCommand(msg);
       }
     } catch (e) {
@@ -135,7 +122,7 @@ function connect() {
   });
 
   ws.addEventListener("close", () => {
-    console.warn("[KTP Bridge] Disconnected from overlay server");
+    console.warn("[KTP Bridge] Disconnected from ktp-hub");
     ws = null;
     scheduleReconnect();
   });
@@ -174,35 +161,43 @@ function reconnect() {
 // ── Command Dispatch ────────────────────────────────────────────────────────
 
 async function handleCommand(msg) {
-  const { type, command, ...params } = msg;
+  // `target`/`type` are routing metadata; `requestId` is echoed back so the
+  // hub can match this command's reply to a waiting HTTP request. The rest
+  // are the handler's params.
+  const { type, target, requestId, command, ...params } = msg;
   const handler = commands.get(command);
   if (!handler) {
     console.warn(`[KTP Bridge] Unknown command: ${command}`);
-    sendEvent("unknown-command", { command });
+    sendEvent("unknown-command", { command, requestId });
     return;
   }
   try {
-    await handler(params);
-    sendEvent("command-ok", { command });
+    const result = await handler(params);
+    sendEvent("command-ok", { command, requestId, ...(result || {}) });
   } catch (e) {
     console.error(`[KTP Bridge] Command "${command}" failed:`, e);
-    sendEvent("command-error", { command, error: e.message });
+    sendEvent("command-error", { command, requestId, error: e.message });
   }
 }
 
 // ── Upstream Events ─────────────────────────────────────────────────────────
 
+// Emit a peer-event to the hub. `source` identifies us; an optional
+// `requestId` (present in command replies) lets the hub resolve a waiting
+// HTTP command. Spontaneous events (no requestId) are just broadcast.
 function sendEvent(event, data = {}) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ type: "foundry-event", event, ...data }));
+  ws.send(JSON.stringify({ type: "peer-event", source: "foundry", event, ...data }));
 }
 
 // ── Settings & Lifecycle ────────────────────────────────────────────────────
 
 Hooks.once("init", () => {
+  // Setting key stays `overlayServerUrl` so existing worlds keep their saved
+  // value across this rename; only the display text refers to ktp-hub.
   game.settings.register("ktp-foundry-bridge", "overlayServerUrl", {
-    name: "Overlay Server WebSocket URL",
-    hint: "WebSocket URL of the KTP overlay server (e.g. ws://localhost:3001/ws)",
+    name: "ktp-hub WebSocket URL",
+    hint: "WebSocket URL of the ktp-hub server (e.g. ws://localhost:3001/ws)",
     scope: "world",
     config: true,
     type: String,
