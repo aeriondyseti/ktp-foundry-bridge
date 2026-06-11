@@ -71,7 +71,12 @@ is safe. ApplicationV2 on Foundry v13+, classic Application on v12.
 - **Overlay Server WebSocket URL** — defaults to `ws://localhost:3001/ws`.
 - **Hexploration base URL** — defaults to `https://ktp.dyseti.net`.
 - **Hexploration share token** — read-only token for the embedded map;
-  blank disables the Hex Map button.
+  blank disables the Hex Map button. World-scoped (players need it).
+- **Hexploration GM token** — read/write token; when set and the user
+  is a GM, the Hex Map button opens the GM tool instead of the player
+  view. **Client-scoped on purpose**: world settings sync to every
+  connected client, which would hand players a write credential. Each
+  GM browser sets it once.
 
 ## Release procedure
 

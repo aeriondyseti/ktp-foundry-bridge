@@ -96,8 +96,17 @@ registerCommand("hex.show-area", async () => {
 
 function hexMapUrl() {
   const base = game.settings.get("ktp-foundry-bridge", "hexBaseUrl").replace(/\/$/, "");
+  if (!base) return null;
+  // GM users with a gm token configured get the read/write GM tool;
+  // everyone else gets the read-only player view. The gm token is a
+  // CLIENT-scoped setting — world settings sync to every connected
+  // client, which would hand players a write credential.
+  if (game.user.isGM) {
+    const gmToken = game.settings.get("ktp-foundry-bridge", "hexGmToken").trim();
+    if (gmToken) return `${base}/explore/gm/?hud=1&token=${encodeURIComponent(gmToken)}`;
+  }
   const token = game.settings.get("ktp-foundry-bridge", "hexShareToken").trim();
-  if (!base || !token) return null;
+  if (!token) return null;
   return `${base}/explore/player/?hud=1&token=${encodeURIComponent(token)}`;
 }
 
@@ -329,6 +338,18 @@ Hooks.once("init", () => {
     name: "Hexploration share token",
     hint: "Read-only share token for the embedded player map (server's share-token.txt or HEXPLORATION_SHARE_TOKEN). Leave blank to disable the Hex Map button.",
     scope: "world",
+    config: true,
+    type: String,
+    default: "",
+  });
+
+  // CLIENT scope, deliberately: world settings are synced to every
+  // connected client, and this token carries write access. Client scope
+  // keeps it in the GM's browser only. Each GM machine sets it once.
+  game.settings.register("ktp-foundry-bridge", "hexGmToken", {
+    name: "Hexploration GM token (this browser only)",
+    hint: "Read/write token for the embedded GM tool (server's gm-token.txt or HEXPLORATION_GM_TOKEN). When set and you are a GM, the Hex Map button opens the GM tool instead of the player view. Stored only in this browser.",
+    scope: "client",
     config: true,
     type: String,
     default: "",
