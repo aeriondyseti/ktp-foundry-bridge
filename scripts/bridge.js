@@ -211,6 +211,9 @@ function getServerUrl() {
 }
 
 function connect() {
+  // Belt-and-braces with the ready-hook check: reconnect() is also
+  // reachable via the setting's onChange, which fires on every client.
+  if (!game.user?.isGM) return;
   const url = getServerUrl();
   if (!url) return;
 
@@ -377,6 +380,17 @@ Hooks.on("getSceneControlButtons", (controls) => {
 });
 
 Hooks.once("ready", () => {
+  // GM clients only. Every client loads this module, but the hub keys
+  // peers by name ("foundry") and the last connection wins the slot —
+  // so if a player connected after the GM, hub commands (including
+  // `eval`) would silently execute on the player's machine with player
+  // permissions. Player-facing features (the Hex Map button) don't
+  // need the socket; only hub-driven commands do, and those are GM
+  // operations by definition.
+  if (!game.user.isGM) {
+    console.log("[KTP Bridge] Non-GM user — not connecting to ktp-hub");
+    return;
+  }
   connect();
   console.log("[KTP Bridge] Module loaded");
 });

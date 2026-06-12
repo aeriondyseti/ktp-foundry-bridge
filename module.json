@@ -2,7 +2,7 @@
   "id": "ktp-foundry-bridge",
   "title": "KTP Hub Bridge",
   "description": "Connects Foundry VTT to the ktp-hub server via WebSocket as a peer, for bidirectional control.",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "compatibility": {
     "minimum": "12",
     "verified": "13"
