@@ -79,126 +79,6 @@ registerCommand("eval", async ({ code }) => {
   if (result !== undefined) return { result: String(result) };
 });
 
-// Open the hexploration map window on this client. Routed from the hub
-// (e.g. the GM control surface saying "everyone, look at the map") —
-// each connected Foundry client that receives it pops the window locally.
-registerCommand("hex.show-area", async () => {
-  openHexMap();
-});
-
-// ── Hexploration Map Window ─────────────────────────────────────────────────
-//
-// Embeds the hexploration player view (ktp.dyseti.net) in a Foundry popout
-// so players don't need a separate browser tab. The iframe URL carries
-// `?hud=1&token=…` — a read-only share token that replaces the session
-// cookie (third-party iframes can't carry one). See hexploration's
-// ROADMAP.md "Phase 2 — Foundry as the player surface".
-
-function hexMapUrl() {
-  const base = game.settings.get("ktp-foundry-bridge", "hexBaseUrl").replace(/\/$/, "");
-  if (!base) return null;
-  // GM users with a gm token configured get the read/write GM tool;
-  // everyone else gets the read-only player view. The gm token is a
-  // CLIENT-scoped setting — world settings sync to every connected
-  // client, which would hand players a write credential.
-  if (game.user.isGM) {
-    const gmToken = game.settings.get("ktp-foundry-bridge", "hexGmToken").trim();
-    if (gmToken) return `${base}/explore/gm/?hud=1&token=${encodeURIComponent(gmToken)}`;
-  }
-  const token = game.settings.get("ktp-foundry-bridge", "hexShareToken").trim();
-  if (!token) return null;
-  return `${base}/explore/player/?hud=1&token=${encodeURIComponent(token)}`;
-}
-
-let hexMapApp = null;
-
-function openHexMap() {
-  const url = hexMapUrl();
-  if (!url) {
-    ui.notifications?.warn(
-      "Hex map is not configured — set the hexploration URL and share token in the KTP Hub Bridge module settings."
-    );
-    return;
-  }
-  // Re-focus the existing window instead of stacking duplicates.
-  if (hexMapApp?.rendered) {
-    hexMapApp.bringToFront?.() ?? hexMapApp.bringToTop?.();
-    return;
-  }
-  hexMapApp = new HexMapApplication(url);
-  hexMapApp.render(true);
-}
-
-// The iframe wrapper window. ApplicationV2 on Foundry v13+, classic
-// Application on v12 — same markup either way.
-const HEX_MAP_CONTENT = (url) => `
-  <div class="ktp-hex-map-body" style="display:flex; flex-direction:column; flex:1; min-height:0;">
-    <iframe src="${url}"
-            style="flex:1; width:100%; border:0; background:#1a1a1a;"
-            allow="fullscreen"></iframe>
-    <div style="flex:0 0 auto; padding:2px 6px; font-size:11px; opacity:0.6; text-align:right;">
-      Map not loading? <a href="${url}" target="_blank" rel="noopener">Open in a browser tab</a>
-    </div>
-  </div>`;
-
-const HexMapApplication = (() => {
-  const AppV2 = foundry?.applications?.api?.ApplicationV2;
-  if (AppV2) {
-    return class HexMapAppV2 extends AppV2 {
-      constructor(url) {
-        super();
-        this.url = url;
-      }
-      static DEFAULT_OPTIONS = {
-        id: "ktp-hex-map",
-        window: { title: "Hex Map", resizable: true },
-        position: { width: 1000, height: 700 },
-      };
-      // No Handlebars template — we hand back a plain element.
-      async _renderHTML() {
-        const div = document.createElement("div");
-        div.innerHTML = HEX_MAP_CONTENT(this.url);
-        const el = div.firstElementChild;
-        return el;
-      }
-      _replaceHTML(result, content) {
-        content.replaceChildren(result);
-        // Let the iframe fill the window's content box.
-        content.style.display = "flex";
-        content.style.flexDirection = "column";
-      }
-      _onClose(options) {
-        super._onClose?.(options);
-        hexMapApp = null;
-      }
-    };
-  }
-  // v12 fallback: classic Application with inline content.
-  return class HexMapAppV1 extends Application {
-    constructor(url) {
-      super();
-      this.url = url;
-    }
-    static get defaultOptions() {
-      return foundry.utils.mergeObject(super.defaultOptions, {
-        id: "ktp-hex-map",
-        title: "Hex Map",
-        resizable: true,
-        width: 1000,
-        height: 700,
-        template: null,
-      });
-    }
-    async _renderInner() {
-      return $(HEX_MAP_CONTENT(this.url));
-    }
-    close(options) {
-      hexMapApp = null;
-      return super.close(options);
-    }
-  };
-})();
-
 // ── WebSocket Connection ────────────────────────────────────────────────────
 
 let ws = null;
@@ -327,56 +207,6 @@ Hooks.once("init", () => {
     default: "ws://localhost:3001/ws",
     onChange: () => reconnect(),
   });
-
-  game.settings.register("ktp-foundry-bridge", "hexBaseUrl", {
-    name: "Hexploration base URL",
-    hint: "Base URL of the hexploration server (e.g. https://ktp.dyseti.net). Used for the Hex Map window.",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "https://ktp.dyseti.net",
-  });
-
-  game.settings.register("ktp-foundry-bridge", "hexShareToken", {
-    name: "Hexploration share token",
-    hint: "Read-only share token for the embedded player map (server's share-token.txt or HEXPLORATION_SHARE_TOKEN). Leave blank to disable the Hex Map button.",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "",
-  });
-
-  // CLIENT scope, deliberately: world settings are synced to every
-  // connected client, and this token carries write access. Client scope
-  // keeps it in the GM's browser only. Each GM machine sets it once.
-  game.settings.register("ktp-foundry-bridge", "hexGmToken", {
-    name: "Hexploration GM token (this browser only)",
-    hint: "Read/write token for the embedded GM tool (server's gm-token.txt or HEXPLORATION_GM_TOKEN). When set and you are a GM, the Hex Map button opens the GM tool instead of the player view. Stored only in this browser.",
-    scope: "client",
-    config: true,
-    type: String,
-    default: "",
-  });
-});
-
-// Toolbar launcher: a "Hex Map" button under the token (default) scene
-// controls. v13 passes `controls` as a record keyed by control name with
-// a `tools` record; v12 passes an array with a `tools` array — handle both.
-Hooks.on("getSceneControlButtons", (controls) => {
-  const tool = {
-    name: "ktp-hex-map",
-    title: "Hex Map",
-    icon: "fa-solid fa-map-location-dot",
-    button: true,
-    onChange: () => openHexMap(),  // v13
-    onClick: () => openHexMap(),   // v12
-  };
-  if (Array.isArray(controls)) {
-    controls.find((c) => c.name === "token")?.tools.push(tool);
-  } else {
-    const tools = controls.tokens?.tools;
-    if (tools) tools[tool.name] = { ...tool, order: Object.keys(tools).length };
-  }
 });
 
 Hooks.once("ready", () => {
@@ -384,9 +214,8 @@ Hooks.once("ready", () => {
   // peers by name ("foundry") and the last connection wins the slot —
   // so if a player connected after the GM, hub commands (including
   // `eval`) would silently execute on the player's machine with player
-  // permissions. Player-facing features (the Hex Map button) don't
-  // need the socket; only hub-driven commands do, and those are GM
-  // operations by definition.
+  // permissions. Only hub-driven commands need the socket, and those
+  // are GM operations by definition.
   if (!game.user.isGM) {
     console.log("[KTP Bridge] Non-GM user — not connecting to ktp-hub");
     return;
@@ -400,7 +229,6 @@ globalThis.ktpBridge = {
   registerCommand,
   sendEvent,
   reconnect,
-  openHexMap,
   get connected() {
     return ws?.readyState === WebSocket.OPEN;
   },
